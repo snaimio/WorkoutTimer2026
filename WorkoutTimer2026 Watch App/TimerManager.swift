@@ -14,13 +14,15 @@ import WatchKit
 final class TimerManager: ObservableObject {
     
     // MARK: - Published for UI
-    @Published private(set) var duration: TimeInterval // total seconds for current session
-    @Published private(set) var remaining: TimeInterval // remaining seconds
+    @Published private(set) var duration: TimeInterval
+    @Published private(set) var remaining: TimeInterval
     @Published private(set) var isRunning: Bool = false
-    @Published private(set) var progress: Double = 0.0 // 0.0 - 1.0
+    @Published private(set) var progress: Double = 0.0
     
-    // MARK: - Config
-    private var timerTask: Task<Void, Never>? = nil
+    // MARK: - Private properties
+    private var timerTask: Task<Void, Never>?
+    private var startDate: Date?
+    private var pausedRemaining: TimeInterval?
     
     init(duration: TimeInterval = 60) {
         self.duration = duration
@@ -31,7 +33,7 @@ final class TimerManager: ObservableObject {
     // MARK: - Public API
     
     func setDuration(_ seconds: TimeInterval) {
-        guard !isRunning else { return } // change only when paused/stopped
+        guard !isRunning else { return }
         duration = max(1, seconds)
         remaining = duration
         updateProgress()
@@ -40,9 +42,17 @@ final class TimerManager: ObservableObject {
     func start() {
         guard !isRunning else { return }
         isRunning = true
+        
+        // If we're resuming from pause
+        if let pausedRemaining = pausedRemaining {
+            remaining = pausedRemaining
+            self.pausedRemaining = nil
+        }
+        
+        startDate = Date()
         scheduleCompletionNotification()
-        timerTask = Task {
-            [weak self] in
+        
+        timerTask = Task { [weak self] in
             await self?.runTimerLoop()
         }
     }
@@ -50,6 +60,7 @@ final class TimerManager: ObservableObject {
     func pause() {
         guard isRunning else { return }
         isRunning = false
+        pausedRemaining = remaining
         timerTask?.cancel()
         timerTask = nil
         removePendingCompletionNotification()
@@ -60,6 +71,7 @@ final class TimerManager: ObservableObject {
         timerTask?.cancel()
         timerTask = nil
         remaining = duration
+        pausedRemaining = nil
         updateProgress()
         removePendingCompletionNotification()
     }
@@ -68,94 +80,80 @@ final class TimerManager: ObservableObject {
         isRunning ? pause() : start()
     }
     
-    private func playCountdownHaptic() {
-        // Use a light tap for contdown
-        WKInterfaceDevice.current().play(.notification)
-    }
-    
-    //MARK: - Private timer loop
+    // MARK: - Private timer loop
     
     private func runTimerLoop() async {
-        let startDate = Date()
-        var lastTick = startDate
+        guard let startDate = startDate else { return }
+        
         while isRunning && remaining > 0 {
-            do {
-                try await Task.sleep(nanoseconds: 250_000_000) // 0.25s ticks
-            }
-            catch {
-                break // cancelled
-            }
+            let elapsed = Date().timeIntervalSince(startDate)
+            let newRemaining = max(0, duration - elapsed)
             
-            let now = Date()
-            
-            let elapsed = now.timeIntervalSince(lastTick)
-            if elapsed >= 1.0 {
-                let wholeSeconds = floor(elapsed)
-                remaining = max(0, wholeSeconds)
-                lastTick = now
-                updateProgress()
+            await MainActor.run {
+                self.remaining = newRemaining
+                self.updateProgress()
                 
-                // LAST 10 SECONDS COUNTDOWN
-                if remaining > 0 && remaining <= 10 {
-                    playCountdownHaptic()
+                // Last 10 seconds countdown haptic
+                if newRemaining > 0 && newRemaining <= 10 && newRemaining.rounded() == newRemaining {
+                    self.playCountdownHaptic()
                 }
-                
             }
             
-            if Task.isCancelled {
+            if newRemaining <= 0 {
+                await timerCompleted()
                 break
             }
             
+            // Sleep for 0.1 seconds for smooth updates
+            do {
+                try await Task.sleep(nanoseconds: 100_000_000)
+            } catch {
+                break // Task cancelled
+            }
         }
         
-        // If timer reached 0 while still running, handle completion
-        if remaining <= 0 && isRunning {
-             await timerCompleted()
+        await MainActor.run {
+            self.isRunning = false
+            self.timerTask = nil
         }
-        
-        isRunning = false
-        timerTask = nil
-        
     }
     
-    private func  timerCompleted() async {
-        remaining = 0
-        updateProgress()
-        
-        // Play a haptic
-        WKInterfaceDevice.current().play(.notification)
-        // Optionally vibrate more or a play a specific sound
-        // Trigger any other clean up / delegate calls here
-        // Post a local notification immediately (in case haptics missed)
+    private func timerCompleted() async {
+        await MainActor.run {
+            self.remaining = 0
+            self.updateProgress()
+            WKInterfaceDevice.current().play(.notification)
+        }
         await sendImmediateNotification()
     }
     
     private func updateProgress() {
         if duration <= 0 {
             progress = 0
-        }
-        else {
+        } else {
             progress = max(0, min(1.0, 1.0 - (remaining / duration)))
         }
     }
     
-    
-    
+    private func playCountdownHaptic() {
+        WKInterfaceDevice.current().play(.notification)
+    }
     
     // MARK: - Notifications
     
     private func scheduleCompletionNotification() {
-        // Schedule a local notification at Date() + remaining (if notification authorized)
         let center = UNUserNotificationCenter.current()
         center.getNotificationSettings { settings in
             guard settings.authorizationStatus == .authorized else { return }
+            
             let content = UNMutableNotificationContent()
             content.title = "Workout Timer"
-            content.body = "Timer finished."
+            content.body = "Timer finished! Great work! 💪"
             content.sound = .default
+            
             let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, self.remaining), repeats: false)
-            let req = UNNotificationRequest(identifier: "WorkoutTimerCompletion", content: content, trigger: trigger)
-            center.add(req, withCompletionHandler: nil)
+            let request = UNNotificationRequest(identifier: "WorkoutTimerCompletion", content: content, trigger: trigger)
+            center.add(request)
         }
     }
     
@@ -163,23 +161,27 @@ final class TimerManager: ObservableObject {
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["WorkoutTimerCompletion"])
     }
     
-    private func  sendImmediateNotification() async {
+    private func sendImmediateNotification() async {
         let center = UNUserNotificationCenter.current()
         let content = UNMutableNotificationContent()
-        content.title = "Workout Timer"
-        content.body = "Your timer has completed."
+        content.title = "Workout Complete! 🎉"
+        content.body = "Your workout timer has finished."
         content.sound = .default
-        let req = UNNotificationRequest(identifier: "WorkoutTimerImmediate-\(UUID().uuidString)", content: content, trigger: nil)
-        try? await center.add(req)
+        
+        let request = UNNotificationRequest(
+            identifier: "WorkoutTimerImmediate-\(UUID().uuidString)",
+            content: content,
+            trigger: nil
+        )
+        try? await center.add(request)
     }
     
-    // MARK: - Helpers (readable formatted time)
+    // MARK: - Helpers
     
     func formattedRemaining() -> String {
-        let sec = Int(max(0, round(remaining)))
-        let minutes = sec / 60
-        let seconds = sec % 60
+        let totalSeconds = Int(max(0, ceil(remaining)))
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
         return String(format: "%02d:%02d", minutes, seconds)
     }
-    
 }
