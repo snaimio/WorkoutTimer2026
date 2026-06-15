@@ -1,1 +1,19 @@
+# Xcode
+xcuserdata/
+*.xcuserstate
+*.xcuserdatad
+DerivedData/
+Build/
 
+# Swift Package Manager
+.swiftpm/
+.build/
+Packages/
+
+# macOS
+.DS_Store
+
+# Profile and debug
+*.profraw
+*.gcda
+*.gcno
