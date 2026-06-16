@@ -61,16 +61,6 @@
 			path = "WorkoutTimer2026 Watch App";
 			sourceTree = "<group>";
 		};
-		804A32112FE02409004B18C7 /* WorkoutTimer2026 Watch AppTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "WorkoutTimer2026 Watch AppTests";
-			sourceTree = "<group>";
-		};
-		804A321B2FE02409004B18C7 /* WorkoutTimer2026 Watch AppUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "WorkoutTimer2026 Watch AppUITests";
-			sourceTree = "<group>";
-		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -102,8 +92,6 @@
 			isa = PBXGroup;
 			children = (
 				804A32032FE02408004B18C7 /* WorkoutTimer2026 Watch App */,
-				804A32112FE02409004B18C7 /* WorkoutTimer2026 Watch AppTests */,
-				804A321B2FE02409004B18C7 /* WorkoutTimer2026 Watch AppUITests */,
 				804A31FA2FE02408004B18C7 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -176,9 +164,6 @@
 			dependencies = (
 				804A32102FE02409004B18C7 /* PBXTargetDependency */,
 			);
-			fileSystemSynchronizedGroups = (
-				804A32112FE02409004B18C7 /* WorkoutTimer2026 Watch AppTests */,
-			);
 			name = "WorkoutTimer2026 Watch AppTests";
 			packageProductDependencies = (
 			);
@@ -198,9 +183,6 @@
 			);
 			dependencies = (
 				804A321A2FE02409004B18C7 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				804A321B2FE02409004B18C7 /* WorkoutTimer2026 Watch AppUITests */,
 			);
 			name = "WorkoutTimer2026 Watch AppUITests";
 			packageProductDependencies = (
